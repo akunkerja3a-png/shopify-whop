@@ -53,12 +53,13 @@ async function createPaidOrder({ email, items, totalAmountPaid, gatewayTransacti
     };
 
     try {
+        const accessToken = await shopifyConfig.getAccessToken();
         const response = await axios.post(
             `${shopifyConfig.baseUrl}/orders.json`,
             orderPayload,
             {
                 headers: {
-                    'X-Shopify-Access-Token': shopifyConfig.adminApiToken,
+                    'X-Shopify-Access-Token': accessToken,
                     'Content-Type': 'application/json'
                 }
             }
@@ -82,6 +83,7 @@ async function createPaidOrder({ email, items, totalAmountPaid, gatewayTransacti
  */
 async function orderExistsForTransaction(gatewayTransactionId) {
     try {
+        const accessToken = await shopifyConfig.getAccessToken();
         const response = await axios.get(
             `${shopifyConfig.baseUrl}/orders.json`,
             {
@@ -91,7 +93,7 @@ async function orderExistsForTransaction(gatewayTransactionId) {
                     fields: 'id,note_attributes'
                 },
                 headers: {
-                    'X-Shopify-Access-Token': shopifyConfig.adminApiToken,
+                    'X-Shopify-Access-Token': accessToken,
                     'Content-Type': 'application/json'
                 }
             }

@@ -14,7 +14,9 @@ WHOP_WEBHOOK_SECRET=whsec_your_webhook_secret # Provided when setting up webhook
 
 # Shopify Admin API Config
 SHOPIFY_STORE=corvea.myshopify.com # Your .myshopify.com domain
-SHOPIFY_ADMIN_API_TOKEN=shpat_your_admin_token # Admin API Token with write_orders, read_products, read_inventory scopes
+SHOPIFY_CLIENT_ID=your_shopify_client_id # Shopify App Client ID from dev dashboard
+SHOPIFY_CLIENT_SECRET=your_shopify_client_secret # Shopify App Client Secret from dev dashboard
+SHOPIFY_ADMIN_API_TOKEN=shpat_your_legacy_admin_token # Optional fallback: legacy direct token
 SHOPIFY_API_VERSION=2026-07
 
 # Membership Configuration Details
@@ -57,6 +59,8 @@ Whop is natively designed for single-product digital checkout configurations (on
    vercel env add WHOP_API_KEY
    vercel env add WHOP_WEBHOOK_SECRET
    vercel env add SHOPIFY_STORE
+   vercel env add SHOPIFY_CLIENT_ID
+   vercel env add SHOPIFY_CLIENT_SECRET
    vercel env add SHOPIFY_ADMIN_API_TOKEN
    vercel env add SHOPIFY_API_VERSION
    vercel env add MEMBERSHIP_PRODUCT_ID
