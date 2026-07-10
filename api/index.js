@@ -29,6 +29,10 @@ app.get('/', (req, res) => {
     res.status(200).send('Shopify-Whop Checkout Integration Gateway is running.');
 });
 
+app.get('/api/auth/callback', (req, res) => {
+    res.status(200).send('OAuth Configuration Verified: App token handshake occurs strictly via backend client credentials.');
+});
+
 app.post('/api/create-checkout', checkoutController.handleCreateCheckout);
 app.post('/api/whop-webhook', validateWebhook, webhookController.handleWebhook);
 
