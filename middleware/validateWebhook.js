@@ -22,10 +22,12 @@ module.exports = (req, res, next) => {
     }
 
     try {
-        // 1. Parse Whop secret key (strip 'whsec_' prefix and decode from base64)
+        // 1. Parse Whop secret key (strip 'whsec_' or 'ws_' prefix and decode from base64)
         let secretKey = whopConfig.webhookSecret;
         if (secretKey.startsWith('whsec_')) {
             secretKey = secretKey.substring(6);
+        } else if (secretKey.startsWith('ws_')) {
+            secretKey = secretKey.substring(3);
         }
         const secretBuffer = Buffer.from(secretKey, 'base64');
 

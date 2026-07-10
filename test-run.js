@@ -21,6 +21,15 @@ axios.get = async function (url, config) {
 };
 
 axios.post = async function (url, data, config) {
+    if (url.includes('/oauth/access_token')) {
+        console.log('   [Mock API] POST /oauth/access_token -> Returning mock access token');
+        return {
+            data: {
+                access_token: 'shpat_mock_access_token_123456',
+                expires_in: 86400
+            }
+        };
+    }
     if (url.includes('/checkout_configurations')) {
         console.log('   [Mock API] POST /checkout_configurations -> Returning mock checkout purchase_url');
         return {
@@ -49,6 +58,8 @@ axios.post = async function (url, data, config) {
 process.env.WHOP_API_KEY = 'apik_test_apikey';
 process.env.WHOP_WEBHOOK_SECRET = MOCK_WEBHOOK_SECRET;
 process.env.SHOPIFY_STORE = 'test-corvea.myshopify.com';
+process.env.SHOPIFY_CLIENT_ID = 'test_client_id_4455';
+process.env.SHOPIFY_CLIENT_SECRET = 'test_client_secret_6677';
 process.env.SHOPIFY_ADMIN_API_TOKEN = 'shpat_test_token';
 
 // Import our server
