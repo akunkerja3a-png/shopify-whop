@@ -9,7 +9,7 @@
  */
 (function () {
     // CONFIGURATION: Replace with your Vercel API Domain
-    const API_ENDPOINT = 'https://YOUR-VERCEL-DEPLOYMENT.vercel.app/api/create-checkout';
+    const API_ENDPOINT = 'https://corvea.vercel.app/api/create-checkout';
 
     // Selectors for checkout buttons in Shrine Theme & Shopify standard carts
     const CHECKOUT_SELECTORS = [
