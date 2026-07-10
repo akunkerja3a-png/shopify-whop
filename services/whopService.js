@@ -2,15 +2,21 @@ const axios = require('axios');
 const whopConfig = require('../config/whop');
 const productMappings = require('../config/product-mappings.json');
 
-let cachedCompanyId = null;
+let cachedCompanyId = process.env.WHOP_COMPANY_ID || null;
 
 /**
  * Gets the company ID dynamically from Whop API if not cached.
+ * Utilizes a triple-fallback mechanism:
+ * 1. Checks if WHOP_COMPANY_ID is configured in the environment values.
+ * 2. Queries GET /companies API (outputs sanitized logs on failure).
+ * 3. Fetches GET /plans/{plan_id} from mappings to extract company_id.
  */
 async function getCompanyId() {
     if (cachedCompanyId) return cachedCompanyId;
 
+    // 1. Primary: List companies endpoint query
     try {
+        console.log('Attempting to fetch Whop Company ID via GET /companies...');
         const response = await axios.get(`${whopConfig.apiUrl}/companies`, {
             headers: {
                 Authorization: `Bearer ${whopConfig.apiKey}`,
@@ -19,17 +25,57 @@ async function getCompanyId() {
         });
 
         const companies = response.data?.data || response.data || [];
-        if (companies.length === 0) {
-            throw new Error('No company found associated with the Whop API Key.');
+        if (companies.length > 0) {
+            cachedCompanyId = companies[0].id;
+            console.log(`Resolved dynamically Whop Company ID from /companies: ${cachedCompanyId}`);
+            return cachedCompanyId;
         }
-
-        cachedCompanyId = companies[0].id;
-        console.log(`Resolved dynamically Whop Company ID: ${cachedCompanyId}`);
-        return cachedCompanyId;
     } catch (error) {
-        console.error('Error fetching Whop company details:', error.response?.data || error.message);
-        throw new Error(`Failed to resolve Whop Company ID: ${error.message}`);
+        const status = error.response?.status || 'N/A';
+        const data = error.response?.data ? JSON.stringify(error.response.data) : 'N/A';
+        console.error(`[Whop API Error] GET /companies failed - Status: ${status}, Body: ${data}, Message: ${error.message}`);
     }
+
+    // 2. Secondary: Retrieve details of mapped plan to extract its company_id
+    console.log('Attempting fallback company ID extraction via GET /plans...');
+    let targetPlanId = 'plan_Pj1GzRRMdZzJ9'; // Default fallback plan
+    try {
+        // Grab the first plan ID from mapped products if available
+        if (productMappings && typeof productMappings === 'object') {
+            const firstMapping = Object.values(productMappings)[0];
+            if (firstMapping && Array.isArray(firstMapping.plans) && firstMapping.plans[0]) {
+                targetPlanId = firstMapping.plans[0];
+            }
+        }
+    } catch (err) {
+        console.error('Failed to parse plan IDs from product mappings:', err.message);
+    }
+
+    try {
+        console.log(`Fetching details for plan ${targetPlanId} to extract company reference...`);
+        const response = await axios.get(`${whopConfig.apiUrl}/plans/${targetPlanId}`, {
+            headers: {
+                Authorization: `Bearer ${whopConfig.apiKey}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const planData = response.data;
+        const extracted = planData?.company_id || planData?.company?.id || planData?.data?.company_id;
+
+        if (extracted) {
+            cachedCompanyId = extracted;
+            console.log(`Resolved Whop Company ID from plan (${targetPlanId}): ${cachedCompanyId}`);
+            return cachedCompanyId;
+        }
+        console.warn(`GET /plans/${targetPlanId} succeeded but did not contain company_id. Body: ${JSON.stringify(planData)}`);
+    } catch (error) {
+        const status = error.response?.status || 'N/A';
+        const data = error.response?.data ? JSON.stringify(error.response.data) : 'N/A';
+        console.error(`[Whop API Error] GET /plans/${targetPlanId} failed - Status: ${status}, Body: ${data}, Message: ${error.message}`);
+    }
+
+    throw new Error('Failed to resolve Whop Company ID via /companies or plan lookup fallbacks. Please configure WHOP_COMPANY_ID in Vercel environment variables.');
 }
 
 /**

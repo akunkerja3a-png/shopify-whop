@@ -11,6 +11,7 @@ Create a `.env` file in the root of your project (or set these inside your Verce
 # Whop API Config
 WHOP_API_KEY=apik_your_whop_key # Provided in Whop Developer Settings
 WHOP_WEBHOOK_SECRET=whsec_your_webhook_secret # Provided when setting up webhook in Whop
+WHOP_COMPANY_ID=your_whop_company_id # Optional: bypasses dynamic company listing lookup
 
 # Shopify Admin API Config
 SHOPIFY_STORE=corvea.myshopify.com # Your .myshopify.com domain
@@ -58,6 +59,7 @@ Whop is natively designed for single-product digital checkout configurations (on
    ```bash
    vercel env add WHOP_API_KEY
    vercel env add WHOP_WEBHOOK_SECRET
+   vercel env add WHOP_COMPANY_ID
    vercel env add SHOPIFY_STORE
    vercel env add SHOPIFY_CLIENT_ID
    vercel env add SHOPIFY_CLIENT_SECRET
