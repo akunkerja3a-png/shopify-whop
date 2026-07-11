@@ -6,10 +6,10 @@ const whopConfig = require('../config/whop');
  * Requires `req.rawBody` to be populated (e.g. from the express.json() verify parameter).
  */
 module.exports = (req, res, next) => {
-    // Graceful fallback for local development or unconfigured environments
-    if (!whopConfig.webhookSecret || whopConfig.webhookSecret === 'whsec_placeholder') {
-        console.warn('WARNING: Whop webhook secret is not configured. Webhook signature validation Bypassed!');
-        return next();
+    // Stringent check: In production webhook validation MUST NOT be bypassed.
+    if (!whopConfig.webhookSecret) {
+        console.error('Webhook verification configuration error: WHOP_WEBHOOK_SECRET is not set.');
+        return res.status(500).json({ error: 'Webhook validation is misconfigured on the server.' });
     }
 
     const webhookId = req.headers['webhook-id'] || req.headers['webhook_id'];
@@ -31,11 +31,11 @@ module.exports = (req, res, next) => {
         }
         const secretBuffer = Buffer.from(secretKey, 'base64');
 
-        // 2. Re-create the signature payload payload
+        // 2. Re-create the signature payload
         const rawBody = req.rawBody || '';
         const signedContent = `${webhookId}.${webhookTimestamp}.${rawBody}`;
 
-        // 3. Compute HMCA-SHA256 signature
+        // 3. Compute HMAC-SHA256 signature
         const computedSignature = crypto
             .createHmac('sha256', secretBuffer)
             .update(signedContent)
@@ -50,11 +50,14 @@ module.exports = (req, res, next) => {
             })
             .filter(Boolean);
 
-        // 5. Compare using timingSafeEqual to avoid timing attacks
+        // 5. Compare using timingSafeEqual, avoiding Length Mismatch TypeErrors
         const computedSignatureBuffer = Buffer.from(computedSignature, 'base64');
         const isValid = signaturesToCompare.some(sig => {
             try {
                 const sigBuffer = Buffer.from(sig, 'base64');
+                if (sigBuffer.length !== computedSignatureBuffer.length) {
+                    return false;
+                }
                 return crypto.timingSafeEqual(sigBuffer, computedSignatureBuffer);
             } catch (e) {
                 return false;
@@ -69,7 +72,7 @@ module.exports = (req, res, next) => {
         // Success
         next();
     } catch (err) {
-        console.error('Webhook signature validation internal error:', err);
+        console.error('Webhook signature validation internal error:', err.message);
         return res.status(500).json({ error: 'Error validating webhook signature.' });
     }
 };

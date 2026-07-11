@@ -5,18 +5,88 @@ const productMappings = require('../config/product-mappings.json');
 let cachedCompanyId = process.env.WHOP_COMPANY_ID || null;
 
 /**
+ * Strips headers / API keys from raw Axios errors to ensure secrets are never leaked in logs.
+ * @param {Error} error 
+ * @returns {Object}
+ */
+function sanitizeAxiosError(error) {
+    if (!error) return { message: 'Unknown error occurred.' };
+
+    const sanitized = {
+        message: error.message,
+        name: error.name
+    };
+
+    if (error.response) {
+        sanitized.status = error.response.status;
+        sanitized.data = error.response.data;
+    }
+
+    return sanitized;
+}
+
+/**
  * Gets the company ID dynamically from Whop API if not cached.
- * Utilizes a triple-fallback mechanism:
+ * Utilizes a secure, triple-fallback resolution mechanism:
  * 1. Checks if WHOP_COMPANY_ID is configured in the environment values.
- * 2. Queries GET /companies API (outputs sanitized logs on failure).
- * 3. Fetches GET /plans/{plan_id} from mappings to extract company_id.
+ * 2. Fetches GET /plans/{plan_id} from mappings to resolve the company.
+ * 3. Queries GET /companies API (outputs sanitized logs on failure).
  */
 async function getCompanyId() {
+    // 1. Primary: Direct Environment variable check
+    if (process.env.WHOP_COMPANY_ID) {
+        cachedCompanyId = process.env.WHOP_COMPANY_ID;
+        return cachedCompanyId;
+    }
+
     if (cachedCompanyId) return cachedCompanyId;
 
-    // 1. Primary: List companies endpoint query
+    // 2. Secondary: Extract from mapped products (find the first valid plans defined in mapping JSON file)
+    let planIds = [];
     try {
-        console.log('Attempting to fetch Whop Company ID via GET /companies...');
+        if (Array.isArray(productMappings)) {
+            planIds = productMappings
+                .map(m => m.whop_plan_id)
+                .filter(id => id && typeof id === 'string' && id.startsWith('plan_'));
+        }
+    } catch (err) {
+        console.error('Failed to parse plan IDs from product mappings:', err.message);
+    }
+
+    // Default static fallback plan ID just in case
+    if (!planIds.includes('plan_Pj1GzRRMdZzJ9')) {
+        planIds.push('plan_Pj1GzRRMdZzJ9');
+    }
+
+    console.log(`[Company Resolution] Attempting extraction using mapped plans:`, planIds);
+
+    for (const planId of planIds) {
+        try {
+            console.log(`[Company Resolution] Requesting plan details: GET /plans/${planId}...`);
+            const response = await axios.get(`${whopConfig.apiUrl}/plans/${planId}`, {
+                headers: {
+                    Authorization: `Bearer ${whopConfig.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const planData = response.data;
+            const extracted = planData?.company_id || planData?.company?.id || planData?.data?.company_id || planData?.data?.company?.id;
+
+            if (extracted) {
+                cachedCompanyId = extracted;
+                console.log(`[Company Resolution] Permanently resolved Whop Company ID: ${cachedCompanyId}`);
+                return cachedCompanyId;
+            }
+        } catch (error) {
+            const sanitized = sanitizeAxiosError(error);
+            console.warn(`[Whop API Warning] GET /plans/${planId} failed - Status: ${sanitized.status || 'N/A'}, Message: ${sanitized.message}`);
+        }
+    }
+
+    // 3. Fallback: List companies endpoint query
+    try {
+        console.log('[Company Resolution] Falling back to list companies endpoint: GET /companies...');
         const response = await axios.get(`${whopConfig.apiUrl}/companies`, {
             headers: {
                 Authorization: `Bearer ${whopConfig.apiKey}`,
@@ -27,55 +97,15 @@ async function getCompanyId() {
         const companies = response.data?.data || response.data || [];
         if (companies.length > 0) {
             cachedCompanyId = companies[0].id;
-            console.log(`Resolved dynamically Whop Company ID from /companies: ${cachedCompanyId}`);
+            console.log(`[Company Resolution] Resolved company ID via /companies: ${cachedCompanyId}`);
             return cachedCompanyId;
         }
     } catch (error) {
-        const status = error.response?.status || 'N/A';
-        const data = error.response?.data ? JSON.stringify(error.response.data) : 'N/A';
-        console.error(`[Whop API Error] GET /companies failed - Status: ${status}, Body: ${data}, Message: ${error.message}`);
+        const sanitized = sanitizeAxiosError(error);
+        console.error(`[Whop API Error] GET /companies failed - Status: ${sanitized.status || 'N/A'}, Message: ${sanitized.message}`);
     }
 
-    // 2. Secondary: Retrieve details of mapped plan to extract its company_id
-    console.log('Attempting fallback company ID extraction via GET /plans...');
-    let targetPlanId = 'plan_Pj1GzRRMdZzJ9'; // Default fallback plan
-    try {
-        // Grab the first plan ID from mapped products if available
-        if (productMappings && typeof productMappings === 'object') {
-            const firstMapping = Object.values(productMappings)[0];
-            if (firstMapping && Array.isArray(firstMapping.plans) && firstMapping.plans[0]) {
-                targetPlanId = firstMapping.plans[0];
-            }
-        }
-    } catch (err) {
-        console.error('Failed to parse plan IDs from product mappings:', err.message);
-    }
-
-    try {
-        console.log(`Fetching details for plan ${targetPlanId} to extract company reference...`);
-        const response = await axios.get(`${whopConfig.apiUrl}/plans/${targetPlanId}`, {
-            headers: {
-                Authorization: `Bearer ${whopConfig.apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const planData = response.data;
-        const extracted = planData?.company_id || planData?.company?.id || planData?.data?.company_id;
-
-        if (extracted) {
-            cachedCompanyId = extracted;
-            console.log(`Resolved Whop Company ID from plan (${targetPlanId}): ${cachedCompanyId}`);
-            return cachedCompanyId;
-        }
-        console.warn(`GET /plans/${targetPlanId} succeeded but did not contain company_id. Body: ${JSON.stringify(planData)}`);
-    } catch (error) {
-        const status = error.response?.status || 'N/A';
-        const data = error.response?.data ? JSON.stringify(error.response.data) : 'N/A';
-        console.error(`[Whop API Error] GET /plans/${targetPlanId} failed - Status: ${status}, Body: ${data}, Message: ${error.message}`);
-    }
-
-    throw new Error('Failed to resolve Whop Company ID via /companies or plan lookup fallbacks. Please configure WHOP_COMPANY_ID in Vercel environment variables.');
+    throw new Error('Failed to resolve Whop Company ID. Configure WHOP_COMPANY_ID in Vercel or ensure at least one mapped Whop plan ID in product-mappings.json is accessible.');
 }
 
 /**
@@ -93,21 +123,25 @@ async function createCheckout(cartPayload, customerEmail = null) {
     let isMembershipInCart = false;
     let oneTimeCentsTotal = 0;
 
-    // Parse line items and locate membership item
+    // Parse line items, supporting quantities, discounts, and free gifts correctly
     const mappedItems = items.map(item => {
-        // Check if handle matches membership
         const isMembership = item.handle === whopConfig.membershipProductId;
+
+        // Use final_price or price per unit, and calculate total line price accurately
+        const unitPrice = typeof item.final_price !== 'undefined' ? item.final_price : item.price;
+        const linePrice = typeof item.final_line_price !== 'undefined' ? item.final_line_price : (unitPrice * item.quantity);
+
         if (isMembership) {
             isMembershipInCart = true;
         } else {
-            oneTimeCentsTotal += (item.price * item.quantity);
+            oneTimeCentsTotal += linePrice;
         }
 
         return {
             variant_id: item.id,
             handle: item.handle,
             title: item.title,
-            price_cents: item.price,
+            price_cents: unitPrice,
             quantity: item.quantity,
             sku: item.sku || '',
             is_membership: isMembership
@@ -119,31 +153,33 @@ async function createCheckout(cartPayload, customerEmail = null) {
     let planPayload = {};
 
     if (isMembershipInCart) {
-        // If the membership is in the cart, the billing structure is 'renewal'
-        // - Initial price = total of one-time items in cart (upfront payment)
-        // - Renewal price = A$39.99 (monthly journal membership)
+        // Renewal billing structure:
+        // - Initial price = total sum of one-time items upfront (e.g. A$54.98)
+        // - Renewal price = A$39.99 (monthly journal subscription)
         // - Free trial = 30 days
+        // - Associated product = Corvea Beauty Journal (required by Whop API for dynamic renewal plans)
         planPayload = {
+            company_id: companyId, // Required for inline plans; must NOT be present at top level of checkout config
+            product_id: whopConfig.whopMembershipProductId, // Required by Whop API for renewal plans
             plan_type: 'renewal',
             initial_price: oneTimeAmountDecimal,
             renewal_price: 39.99,
             billing_period: 30,
             trial_period_days: 30,
-            currency: 'aud' // Corvea store prices are A$
+            currency: 'aud' // Corvea store base currency is AUD
         };
     } else {
         // One-time payment only
         planPayload = {
+            company_id: companyId, // Required for inline plans; must NOT be present at top level of checkout config
             plan_type: 'one_time',
             initial_price: oneTimeAmountDecimal,
             currency: 'aud'
         };
     }
 
-    // Construct request checkout configuration
-    // Metadata stores details needed to rebuild Shopify Order in Webhook
     const payload = {
-        company_id: companyId,
+        // Note: company_id must NOT be at the top level of this request, otherwise Whop returns a 400 bad request error
         mode: 'payment',
         plan: planPayload,
         redirect_url: `https://${cartPayload.host || 'corvea.store'}/pages/thank-you`,
@@ -155,6 +191,7 @@ async function createCheckout(cartPayload, customerEmail = null) {
     };
 
     try {
+        console.log(`[Whop Checkout] Creating checkout configuration for plan type: ${planPayload.plan_type}...`);
         const response = await axios.post(
             `${whopConfig.apiUrl}/checkout_configurations`,
             payload,
@@ -176,8 +213,9 @@ async function createCheckout(cartPayload, customerEmail = null) {
             checkout_id: response.data?.id || response.data?.data?.id
         };
     } catch (error) {
-        console.error('Error generating Whop checkout configuration:', error.response?.data || error.message);
-        throw new Error(`Whop Checkout API error: ${JSON.stringify(error.response?.data) || error.message}`);
+        const sanitized = sanitizeAxiosError(error);
+        console.error('[Whop Checkout Error] Failed to generate checkout configuration:', sanitized);
+        throw new Error(`Whop Checkout API error: ${JSON.stringify(sanitized.data) || sanitized.message}`);
     }
 }
 

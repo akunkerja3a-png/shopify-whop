@@ -10,9 +10,9 @@ async function handleWebhook(req, res) {
     const eventAction = event.action || event.type;
     const eventData = event.data;
 
-    console.log(`Received Whop Webhook event: ${eventAction}`);
+    console.log(`[Webhook Receiver] Received event from Whop: ${eventAction}`);
 
-    // We are interested in payments or membership activations (e.g. trial activations)
+    // Interested in payments or membership activations (e.g. trial activations)
     if (eventAction !== 'payment.succeeded' && eventAction !== 'membership.activated') {
         return res.status(200).json({ message: `Ignored unhandled event: ${eventAction}` });
     }
@@ -25,12 +25,12 @@ async function handleWebhook(req, res) {
     const metadata = eventData.metadata || {};
 
     if (!transactionId) {
-        return res.status(400).json({ error: 'Missing transaction/resource ID.' });
+        return res.status(400).json({ error: 'Missing transaction or resource ID.' });
     }
 
     // Verify that the metadata contains the cart items JSON
     if (!metadata.cart_items_json) {
-        console.log(`Skipping order sync: Metdata doesn't contain cart_items_json. Webhook transaction: ${transactionId}`);
+        console.log(`[Webhook Receiver] Skipping sync: Metadata does not contain cart_items_json. TX: ${transactionId}`);
         return res.status(200).json({ message: 'No Shopify cart metadata found in checkout. Skipping order creation.' });
     }
 
@@ -38,11 +38,11 @@ async function handleWebhook(req, res) {
         // 1. Idempotency Check: check if order already exists for this Whop Payment/Membership ID
         const exists = await shopifyService.orderExistsForTransaction(transactionId);
         if (exists) {
-            console.log(`Order already exists for transaction/membership: ${transactionId}. Skipping creation.`);
+            console.log(`[Webhook Receiver] Order already exists for transaction: ${transactionId}. Skipping duplicate creation.`);
             return res.status(200).json({ message: 'Order already processed.' });
         }
 
-        // 2. Parse card line items
+        // 2. Parse cart line items
         const lineItems = JSON.parse(metadata.cart_items_json);
 
         // 3. Resolve customer details
@@ -50,10 +50,9 @@ async function handleWebhook(req, res) {
         const customerName = eventData.customer?.username || eventData.customer?.email || 'Whop Customer';
 
         // 4. Calculate total paid
-        // If it's a membership activation event (with no amount field or A$0 initial price), total paid is 0 or what was paid for one-time items
+        // If it's a membership activation event (with no initial amount field or A$0 initial price), total paid is 0 or what was paid for one-time items
         let totalPaid = 0.00;
         if (eventData.amount) {
-            // Whop prices might be in cents (e.g. 3498) depending on gateway, or decimal. Let's normalize it.
             const rawAmt = parseFloat(eventData.amount);
             totalPaid = rawAmt > 200 ? rawAmt / 100 : rawAmt;
         } else {
@@ -64,7 +63,7 @@ async function handleWebhook(req, res) {
             totalPaid = parseFloat((oneTimeCentsTotal / 100).toFixed(2));
         }
 
-        console.log(`Creating order in Shopify for customer ${email}. Items count: ${lineItems.length}. Total paid: A$${totalPaid}`);
+        console.log(`[Webhook Receiver] Re-creating Shopify order for customer ${email}. Items count: ${lineItems.length}. Total paid: A$${totalPaid}`);
 
         // 5. Create paid order in Shopify (this automatically decrements inventory)
         const shopifyOrder = await shopifyService.createPaidOrder({
@@ -80,8 +79,8 @@ async function handleWebhook(req, res) {
             shopify_order_id: shopifyOrder.id
         });
     } catch (error) {
-        console.error(`Error processing Whop Webhook (${transactionId}):`, error);
-        return res.status(500).json({ error: 'Failed to process webhook event.' });
+        console.error(`[Webhook Receiver Error] Failed to process Whop Webhook (${transactionId}):`, error.message);
+        return res.status(500).json({ error: error.message || 'Failed to process webhook event.' });
     }
 }
 

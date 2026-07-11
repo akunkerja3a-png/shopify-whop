@@ -2,8 +2,28 @@ const axios = require('axios');
 const shopifyConfig = require('../config/shopify');
 
 /**
+ * Strips headers / API keys from raw Axios errors to ensure secrets are never leaked in logs.
+ * @param {Error} error 
+ * @returns {Object}
+ */
+function sanitizeAxiosError(error) {
+    if (!error) return { message: 'Unknown error occurred.' };
+
+    const sanitized = {
+        message: error.message,
+        name: error.name
+    };
+
+    if (error.response) {
+        sanitized.status = error.response.status;
+        sanitized.data = error.response.data;
+    }
+
+    return sanitized;
+}
+
+/**
  * Creates a paid order in Shopify using the Shopify Admin REST API.
- * This naturally deducts inventory for tracking variant IDs in Shopify.
  * 
  * @param {Object} params
  * @param {string} params.email - Customer email
@@ -32,8 +52,8 @@ async function createPaidOrder({ email, items, totalAmountPaid, gatewayTransacti
             },
             email: email,
             financial_status: 'paid',
-            // Optional shipping/billing fields if Whop parses them
-            // Since Whop collects payment and membership details, we fill basic customer record
+            // Enforce automatic inventory decrementing matching the store's policy
+            inventory_behaviour: 'decrement_obeying_policy',
             transactions: [
                 {
                     kind: 'sale',
@@ -54,6 +74,8 @@ async function createPaidOrder({ email, items, totalAmountPaid, gatewayTransacti
 
     try {
         const accessToken = await shopifyConfig.getAccessToken();
+        console.log(`[Shopify Service] Creating paid order on ${shopifyConfig.storeDomain} for Whop TX: ${gatewayTransactionId}...`);
+
         const response = await axios.post(
             `${shopifyConfig.baseUrl}/orders.json`,
             orderPayload,
@@ -66,11 +88,12 @@ async function createPaidOrder({ email, items, totalAmountPaid, gatewayTransacti
         );
 
         const createdOrder = response.data?.order;
-        console.log(`Successfully created Shopify paid order ID: ${createdOrder?.id} for Whop TX: ${gatewayTransactionId}`);
+        console.log(`[Shopify Service] Successfully created Shopify paid order ID: ${createdOrder?.id}`);
         return createdOrder;
     } catch (error) {
-        console.error('Error creating order in Shopify:', error.response?.data || error.message);
-        throw new Error(`Shopify Order Creation failed: ${JSON.stringify(error.response?.data) || error.message}`);
+        const sanitized = sanitizeAxiosError(error);
+        console.error('[Shopify Service Error] Failed to create order in Shopify:', sanitized);
+        throw new Error(`Shopify Order Creation failed: ${JSON.stringify(sanitized.data) || sanitized.message}`);
     }
 }
 
@@ -108,8 +131,9 @@ async function orderExistsForTransaction(gatewayTransactionId) {
             );
         });
     } catch (error) {
-        console.error('Error checking duplicate order in Shopify:', error.message);
-        // On error, default to false so we don't block order creation, but log it
+        const sanitized = sanitizeAxiosError(error);
+        console.error('[Shopify Service Error] Failed to verify duplicate order check in Shopify:', sanitized.message);
+        // Default to false to avoid blocking order creation in case of transient check failures, but log it
         return false;
     }
 }
