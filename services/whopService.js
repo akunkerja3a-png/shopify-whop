@@ -227,19 +227,38 @@ async function createCheckout(cartPayload, customerEmail = null) {
                 currency: payload.plan?.currency
             },
             redirect_url: payload.redirect_url,
-            metadata: {
-                shopify_cart_token: payload.metadata?.shopify_cart_token
-            }
+            metadata_size: payload.metadata ? JSON.stringify(payload.metadata).length : 0
         };
 
-        const errorDetails = {
-            endpoint: `POST ${whopConfig.apiUrl}/checkout_configurations`,
-            status: error.response?.status || 'N/A',
-            response_body: error.response?.data || error.message,
-            payload: sanitizedPayload
+        // Extract Shopify cart debugging information for audit
+        const cartDebugInfo = {
+            total_price: cartPayload?.total_price,
+            items_subtotal_price: cartPayload?.items_subtotal_price,
+            total_discount: cartPayload?.total_discount,
+            items: (cartPayload?.items || []).map(item => ({
+                handle: item.handle,
+                variant_title: item.variant_title || item.title,
+                quantity: item.quantity,
+                final_price: item.final_price || item.price,
+                final_line_price: item.final_line_price || item.line_price || ((item.final_price || item.price) * item.quantity)
+            }))
         };
 
-        console.error('[Whop Checkout Validation Error]:', JSON.stringify(errorDetails, null, 2));
+        console.error(
+            '[Whop Checkout Response Body]',
+            JSON.stringify(error.response?.data, null, 2)
+        );
+
+        console.error(
+            '[Whop Checkout Payload]',
+            JSON.stringify(sanitizedPayload, null, 2)
+        );
+
+        console.error(
+            '[Shopify Cart Totals]',
+            JSON.stringify(cartDebugInfo, null, 2)
+        );
+
         throw new Error(`Whop Checkout API error: ${error.response?.data ? JSON.stringify(error.response.data, null, 2) : error.message}`);
     }
 }
