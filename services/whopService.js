@@ -130,7 +130,12 @@ async function createCheckout(cartPayload, customerEmail = null) {
         const isMembership = item.handle === whopConfig.membershipProductId;
 
         // Use final_price or price per unit, and calculate total line price accurately
-        const unitPrice = typeof item.final_price !== 'undefined' ? item.final_price : item.price;
+        const unitPrice =
+    typeof item.final_price !== 'undefined'
+        ? item.final_price
+        : (typeof item.price !== 'undefined'
+            ? item.price
+            : item.price_cents);
         const linePrice = typeof item.final_line_price !== 'undefined' ? item.final_line_price : (unitPrice * item.quantity);
 
         if (isMembership) {
