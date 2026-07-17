@@ -15,7 +15,10 @@ module.exports = (req, res, next) => {
     const webhookId = req.headers['webhook-id'] || req.headers['webhook_id'];
     const webhookTimestamp = req.headers['webhook-timestamp'] || req.headers['webhook_timestamp'];
     const webhookSignature = req.headers['webhook-signature'] || req.headers['webhook_signature'];
-
+    
+    console.log("=== WEBHOOK HEADERS ===");
+    console.log(req.headers);
+	
     if (!webhookId || !webhookTimestamp || !webhookSignature) {
         console.error('Webhook verification failed: Missing required webhook headers.');
         return res.status(401).json({ error: 'Missing standard webhook verification headers.' });
@@ -63,6 +66,10 @@ module.exports = (req, res, next) => {
                 return false;
             }
         });
+
+	console.log("Received Signature:", webhookSignature);
+	console.log("Computed Signature:", computedSignature);
+	console.log("Webhook Secret:", whopConfig.webhookSecret.substring(0, 10) + "...");
 
         if (!isValid) {
             console.error('Webhook verification failed: Signature mismatch.');
