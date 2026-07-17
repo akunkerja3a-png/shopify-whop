@@ -263,8 +263,7 @@ async function createCheckout(cartPayload, customerEmail = null) {
             checkout_reference: checkoutReference,
             session_id: sessionId,
             plan_id: planId,
-            embedded_checkout_url: `embedded_checkout_url:
-`${process.env.APP_URL}/?reference=${checkoutReference}&session=${sessionId}&plan=${planId}``
+            embedded_checkout_url: `${process.env.APP_URL}/?reference=${checkoutReference}&session=${sessionId}&plan=${planId}`
         };
     } catch (error) {
         // Serialized error logging to prevent collapsing in Vercel UI
