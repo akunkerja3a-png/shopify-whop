@@ -235,7 +235,10 @@ async function createCheckout(cartPayload, customerEmail = null) {
         console.log(`[Whop Checkout] Stored checkout details to Redis, Key: ${redisKey}`);
         console.log(`[Whop Checkout] Creating checkout configuration for plan type: ${planPayload.plan_type}...`);
 
-        const response = await axios.post(
+	console.log('=== WHOP PAYLOAD ===');
+	console.log(JSON.stringify(payload, null, 2));
+       
+	 const response = await axios.post(
             `${whopConfig.apiUrl}/checkout_configurations`,
             payload,
             {
